@@ -1,4 +1,4 @@
-export type { Ollama } from "./src/index.ts"
+export { Ollama } from "./src/index.ts"
 export * as interfaces from "./src/interfaces.ts"
 export * as utils from "./src/utils.ts"
 export * as version from "./src/version.ts"
