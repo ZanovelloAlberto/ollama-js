@@ -1,5 +1,4 @@
-import * as utils from './utils.js'
-import 'whatwg-fetch'
+import * as utils from './utils.ts'
 
 import type {
   Fetch,
@@ -21,7 +20,7 @@ import type {
   ChatRequest,
   ChatResponse,
   CreateRequest,
-} from './interfaces.js'
+} from './interfaces.ts'
 
 export class Ollama {
   protected readonly config: Config
@@ -67,12 +66,18 @@ export class Ollama {
     if (!response.body) {
       throw new Error('Missing body')
     }
+    console.log(response);
+    console.log(request);
+    
 
     const itr = utils.parseJSON<T | ErrorResponse>(response.body)
 
     if (request.stream) {
       return (async function* () {
         for await (const message of itr) {
+
+          console.log(message);
+          
           if ('error' in message) {
             throw new Error(message.error)
           }
@@ -80,14 +85,17 @@ export class Ollama {
           // message will be done in the case of chat and generate
           // message will be success in the case of a progress response (pull, push, create)
           if ((message as any).done || (message as any).status === 'success') {
+
             return
           }
         }
         throw new Error('Did not receive done or success response in stream.')
       })()
-    } else {
+    } else {      
       const message = await itr.next()
       if (!message.value.done && (message.value as any).status !== 'success') {
+        console.log(message);
+        
         throw new Error('Expected a completed response.')
       }
       return message.value
@@ -215,4 +223,4 @@ export class Ollama {
 export default new Ollama()
 
 // export all types from the main entry point so that packages importing types dont need to specify paths
-export * from './interfaces.js'
+export * from './interfaces.ts'

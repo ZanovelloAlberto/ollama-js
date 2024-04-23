@@ -1,5 +1,5 @@
-import { version } from './version.js'
-import type { Fetch, ErrorResponse } from './interfaces.js'
+import { version } from './version.ts'
+import type { Fetch, ErrorResponse } from './interfaces.ts'
 
 class ResponseError extends Error {
   constructor(
@@ -42,13 +42,14 @@ const checkOk = async (response: Response): Promise<void> => {
 }
 
 function getPlatform() {
-  if (typeof window !== 'undefined' && window.navigator) {
-    return `${window.navigator.platform.toLowerCase()} Browser/${navigator.userAgent};`
-  } else if (typeof process !== 'undefined') {
-    return `${process.arch} ${process.platform} Node.js/${process.version}`
-  }
-  return '' // unknown
+  return `Ollama-deno/${Deno.env.get("BUILD_VERSION") ?? "1.0"} (${Deno.build.os}; ${Deno.build.arch}) Deno/${Deno.version.deno}`;
 }
+Deno.test({
+  name: 'getPlatform',
+  fn() {
+    console.log(getPlatform())
+  },
+})
 
 const fetchWithHeaders = async (
   fetch: Fetch,

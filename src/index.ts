@@ -1,24 +1,23 @@
-import * as utils from './utils.js'
-import fs, { promises, createReadStream } from 'fs'
-import { join, resolve, dirname } from 'path'
-import { createHash } from 'crypto'
-import { homedir } from 'os'
-import { Ollama as OllamaBrowser } from './browser.js'
-
-import type { CreateRequest, ProgressResponse } from './interfaces.js'
+import * as utils from './utils.ts'
+import { Ollama as OllamaBrowser } from './browser.ts'
+import { crypto } from "https://deno.land/std@0.223.0/crypto/mod.ts";
+import type { CreateRequest, ProgressResponse } from './interfaces.ts'
+import * as path from "https://deno.land/std@0.223.0/path/mod.ts";  
 
 export class Ollama extends OllamaBrowser {
-  async encodeImage(image: Uint8Array | Buffer | string): Promise<string> {
+  async encodeImage(image: Uint8Array | string): Promise<string> {
     if (typeof image !== 'string') {
       // image is Uint8Array or Buffer, convert it to base64
-      const result = Buffer.from(image).toString('base64')
+      const result = new TextDecoder().decode(image)
       return result
     }
     try {
-      if (fs.existsSync(image)) {
+
+      if (Deno.statSync(image).isFile) {
         // this is a filepath, read the file and convert it to base64
-        const fileBuffer = await promises.readFile(resolve(image))
-        return Buffer.from(fileBuffer).toString('base64')
+        const fileBuffer = await Deno.readFile(image)
+        // Uint8Array convert it to base64
+        return btoa(String.fromCharCode(...fileBuffer))
       }
     } catch {
       // continue
@@ -29,7 +28,7 @@ export class Ollama extends OllamaBrowser {
 
   private async parseModelfile(
     modelfile: string,
-    mfDir: string = process.cwd(),
+    mfDir: string = Deno.cwd(),
   ): Promise<string> {
     const out: string[] = []
     const lines = modelfile.split('\n')
@@ -49,16 +48,16 @@ export class Ollama extends OllamaBrowser {
     return out.join('\n')
   }
 
-  private resolvePath(inputPath, mfDir) {
+  private resolvePath(inputPath:string, mfDir: string) {
     if (inputPath.startsWith('~')) {
-      return join(homedir(), inputPath.slice(1))
+      return path.join (Deno.env.get("HOME") || "", inputPath.slice(1))
     }
-    return resolve(mfDir, inputPath)
+    return path.resolve(mfDir, inputPath)
   }
 
   private async fileExists(path: string): Promise<boolean> {
     try {
-      await promises.access(path)
+      (await Deno.stat(path)).isFile
       return true
     } catch {
       return false
@@ -73,15 +72,10 @@ export class Ollama extends OllamaBrowser {
     }
 
     // Create a stream for reading the file
-    const fileStream = createReadStream(path)
+    const fileStream = await Deno.readFile(path)
+    const sha256sum = crypto.subtle.digest('SHA3-256',fileStream )
+    
 
-    // Compute the SHA256 digest
-    const sha256sum = await new Promise<string>((resolve, reject) => {
-      const hash = createHash('sha256')
-      fileStream.on('data', (data) => hash.update(data))
-      fileStream.on('end', () => resolve(hash.digest('hex')))
-      fileStream.on('error', reject)
-    })
 
     const digest = `sha256:${sha256sum}`
 
@@ -89,21 +83,12 @@ export class Ollama extends OllamaBrowser {
       await utils.head(this.fetch, `${this.config.host}/api/blobs/${digest}`)
     } catch (e) {
       if (e instanceof Error && e.message.includes('404')) {
-        // Create a new readable stream for the fetch request
         const readableStream = new ReadableStream({
           start(controller) {
-            fileStream.on('data', (chunk) => {
-              controller.enqueue(chunk) // Enqueue the chunk directly
-            })
-
-            fileStream.on('end', () => {
-              controller.close() // Close the stream when the file ends
-            })
-
-            fileStream.on('error', (err) => {
-              controller.error(err) // Propagate errors to the stream
-            })
-          },
+            controller.enqueue(fileStream);
+            controller.close();
+            controller.error(new Error("error"));
+          }
         })
 
         await utils.post(
@@ -129,10 +114,12 @@ export class Ollama extends OllamaBrowser {
   ): Promise<ProgressResponse | AsyncGenerator<ProgressResponse>> {
     let modelfileContent = ''
     if (request.path) {
-      modelfileContent = await promises.readFile(request.path, { encoding: 'utf8' })
+      let decoder = new TextDecoder("utf-8")
+      modelfileContent = decoder.decode(await Deno.readFile(request.path))
+      // modelfileContent = await promises.readFile(request.path, { encoding: 'utf8' })
       modelfileContent = await this.parseModelfile(
         modelfileContent,
-        dirname(request.path),
+        path.dirname(request.path),
       )
     } else if (request.modelfile) {
       modelfileContent = await this.parseModelfile(request.modelfile)
@@ -152,5 +139,18 @@ export class Ollama extends OllamaBrowser {
 
 export default new Ollama()
 
+
+Deno.test("test", async () => {
+  const ollama = new Ollama()
+  let res = await ollama.generate({
+    model: "gemma:2b",
+    prompt: "cioa come stai?",
+  })
+  
+  let cont = res.response
+  console.log(cont)
+  // assertEquals(result, "AQIDBAU=")
+})
+
 // export all types from the main entry point so that packages importing types dont need to specify paths
-export * from './interfaces.js'
+export * from './interfaces.ts'
